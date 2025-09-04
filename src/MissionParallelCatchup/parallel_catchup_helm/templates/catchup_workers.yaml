@@ -19,6 +19,7 @@ metadata:
 spec:
   serviceName: "stellar-core"
   replicas: {{ .Values.worker.replicas }}
+  podManagementPolicy: "Parallel"
   selector:
     matchLabels:
       app: stellar-core
@@ -27,17 +28,11 @@ spec:
       labels:
         app: stellar-core
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-              - key: purpose
-                operator: NotIn
-                values:
-                - ssc
+      tolerations:
+        - effect: NoSchedule
+          key: catchup
+      nodeSelector:
+        purpose: catchup
       containers:
       - name: stellar-core
         image: {{ .Values.worker.stellar_core_image }}
