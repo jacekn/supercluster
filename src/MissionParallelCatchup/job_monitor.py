@@ -52,6 +52,8 @@ logger = logging.getLogger()
 status = {
     'num_remain': 1, # initialize the job remaining to non-zero to indicate something is running, just the status hasn't been updated yet
     'num_succeeded': 0,
+    'num_failed': 0,
+    'num_in_progress': 0,
     'jobs_failed': [],
     'jobs_in_progress': [],
     'workers': []
@@ -71,6 +73,19 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             with status_lock:
                 self.wfile.write(json.dumps(status).encode())
+        # Prometheus metrics use status data
+        elif self.path == '/prometheus':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            status_data = None
+            prometheus_metrics = ''
+            with status_lock:
+                status_data = status
+            for metric in status_data.keys():
+                if metric.startswith('num_'):
+                    prometheus_metrics += f'ssc_parallel_catchup_jobs{{queue="{metric}"}} {status_data[metric]}\n'
+            self.wfile.write(prometheus_metrics.encode())
         elif self.path == '/metrics':
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
@@ -115,13 +130,17 @@ def update_status_and_metrics():
             num_succeeded = redis_client.llen(SUCCESS_QUEUE)
             # For failed and in-progress jobs, we retrieve their full content
             jobs_failed = redis_client.lrange(FAILED_QUEUE, 0, -1)
+            num_failed = len(jobs_failed)
             jobs_in_progress = redis_client.lrange(PROGRESS_QUEUE, 0, -1)
+            num_in_progress = len(jobs_in_progress)
 
             # update the status
             with status_lock:
                 status = {
                     'num_remain': num_remain,
                     'num_succeeded': num_succeeded,
+                    'num_failed': num_failed,
+                    'num_in_progress': num_in_progress,
                     'jobs_failed': jobs_failed,
                     'jobs_in_progress': jobs_in_progress,
                     'workers': worker_statuses
