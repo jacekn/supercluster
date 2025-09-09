@@ -173,7 +173,6 @@ def update_status_and_metrics():
             logger.info("Checking for metrics in redis")
             new_metrics = redis_client.spop(METRICS, 1000)
             if len(new_metrics) > 0:
-                logger.info("New metrics: %s", json.dumps(new_metrics))
                 with metrics_lock:
                     metrics['metrics'].extend(new_metrics)
             #logger.info("Metrics: %s", json.dumps(metrics))
