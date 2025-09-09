@@ -90,10 +90,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             for metric in status_data.keys():
                 if metric.startswith('num_'):
                     prometheus_metrics += f'ssc_parallel_catchup_jobs{{queue="{metric}"}} {status_data[metric]}\n'
-                if metric.startswith('num_workers_'):
-                    prometheus_metrics += f'ssc_parallel_catchup_workers{{status="{metric}"}} {status_data[metric]}\n'
                 if metric == 'workers_refresh_duration':
                     prometheus_metrics += f'ssc_parallel_catchup_workers_refresh_duration_seconds {status_data[metric]}\n'
+                elif metric.startswith('workers_'):
+                    prometheus_metrics += f'ssc_parallel_catchup_workers{{status="{metric}"}} {status_data[metric]}\n'
             self.wfile.write(prometheus_metrics.encode())
         elif self.path == '/metrics':
             self.send_response(200)
@@ -163,8 +163,8 @@ def update_status_and_metrics():
                     'jobs_failed': jobs_failed,
                     'jobs_in_progress': jobs_in_progress,
                     'workers': worker_statuses,
-                    'num_workers_up': workers_up,
-                    'num_workers_down': workers_down,
+                    'workers_up': workers_up,
+                    'workers_down': workers_down,
                     'workers_refresh_duration': workers_refresh_duration,
                 }
             #logger.info("Status: %s", json.dumps(status))
