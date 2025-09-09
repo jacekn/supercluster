@@ -90,6 +90,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             for metric in status_data.keys():
                 if metric.startswith('num_'):
                     prometheus_metrics += f'ssc_parallel_catchup_jobs{{queue="{metric}"}} {status_data[metric]}\n'
+                if metric.startswith('num_workers_'):
+                    prometheus_metrics += f'ssc_parallel_catchup_workers{{status="{metric}"}} {status_data[metric]}\n'
+                if metric == 'workers_refresh_duration':
+                    prometheus_metrics += f'ssc_parallel_catchup_workers_refresh_duration_seconds {status_data[metric]}\n'
             self.wfile.write(prometheus_metrics.encode())
         elif self.path == '/metrics':
             self.send_response(200)
@@ -116,6 +120,7 @@ def update_status_and_metrics():
             workers_down = 0
             workers_up = 0
             logger.info("Starting worker liveness check")
+            workers_refresh_start_time = time.time()
             for i in range(WORKER_COUNT):
                 worker_name = f"{WORKER_PREFIX}-{i}.{WORKER_PREFIX}.{NAMESPACE}.svc.cluster.local"
                 try:
@@ -128,6 +133,7 @@ def update_status_and_metrics():
                     logger.info("Worker %s is down", worker_name)
                     worker_statuses.append({'worker_id': i, 'status': 'down'})
                     workers_down += 1
+            workers_refresh_duration = time.time() - workers_refresh_start_time
             logger.info("Finished workers liveness check")
             # Retry stuck jobs
             if all_workers_down and redis_client.llen(PROGRESS_QUEUE) > 0:
@@ -156,9 +162,10 @@ def update_status_and_metrics():
                     'num_in_progress': num_in_progress,
                     'jobs_failed': jobs_failed,
                     'jobs_in_progress': jobs_in_progress,
-                    'workers_up': workers_up,
-                    'workers_down': workers_down,
-                    'workers': worker_statuses
+                    'workers': worker_statuses,
+                    'num_workers_up': workers_up,
+                    'num_workers_down': workers_down,
+                    'workers_refresh_duration': workers_refresh_duration,
                 }
             #logger.info("Status: %s", json.dumps(status))
 
