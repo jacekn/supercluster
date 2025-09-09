@@ -111,12 +111,12 @@ def update_status_and_metrics():
             for i in range(WORKER_COUNT):
                 worker_name = f"{WORKER_PREFIX}-{i}.{WORKER_PREFIX}.{NAMESPACE}.svc.cluster.local"
                 try:
-                    response = requests.get(f"http://{worker_name}:11626/info")
+                    response = requests.get(f"http://{worker_name}:11626/info", timeout=5)
                     logger.debug("Worker %s is running, status code %d, response: %s", worker_name, response.status_code, response.json())
                     worker_statuses.append({'worker_id': i, 'status': 'running', 'info': response.json()['info']['status']})
                     all_workers_down = False
                 except requests.exceptions.RequestException:
-                    logger.debug("Worker %s is down", worker_name)
+                    logger.info("Worker %s is down", worker_name)
                     worker_statuses.append({'worker_id': i, 'status': 'down'})
             # Retry stuck jobs
             if all_workers_down and redis_client.llen(PROGRESS_QUEUE) > 0:
@@ -150,6 +150,7 @@ def update_status_and_metrics():
             #logger.info("Status: %s", json.dumps(status))
 
             # update the metrics
+            logger.info("Checking for metrics in redis")
             new_metrics = redis_client.spop(METRICS, 1000)
             if len(new_metrics) > 0:
                 logger.info("New metrics: %s", json.dumps(new_metrics))
