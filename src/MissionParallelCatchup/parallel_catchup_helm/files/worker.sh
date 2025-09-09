@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh -x
 
 # Check if required environment variables are set
 if [ -z "$REDIS_HOST" ]; then echo "REDIS_HOST not set"; exit 1; fi
