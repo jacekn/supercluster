@@ -145,14 +145,15 @@ def update_status_and_metrics():
                     'jobs_in_progress': jobs_in_progress,
                     'workers': worker_statuses
                 }
-            logger.info("Status: %s", json.dumps(status))
+            #logger.info("Status: %s", json.dumps(status))
 
             # update the metrics
             new_metrics = redis_client.spop(METRICS, 1000)
             if len(new_metrics) > 0:
+                logger.info("New metrics: %s", json.dumps(new_metrics))
                 with metrics_lock:
                     metrics['metrics'].extend(new_metrics)
-            logger.info("Metrics: %s", json.dumps(metrics))
+            #logger.info("Metrics: %s", json.dumps(metrics))
 
         except Exception as e:
             logger.error("Error while getting status: %s", str(e))
