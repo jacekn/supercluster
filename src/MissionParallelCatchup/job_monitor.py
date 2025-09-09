@@ -108,16 +108,22 @@ def update_status_and_metrics():
             # Ping each worker status
             worker_statuses = []
             all_workers_down = True
+            workers_down = 0
+            workers_up = 0
+            logger.info("Starting worker liveness check")
             for i in range(WORKER_COUNT):
                 worker_name = f"{WORKER_PREFIX}-{i}.{WORKER_PREFIX}.{NAMESPACE}.svc.cluster.local"
                 try:
                     response = requests.get(f"http://{worker_name}:11626/info", timeout=5)
                     logger.debug("Worker %s is running, status code %d, response: %s", worker_name, response.status_code, response.json())
                     worker_statuses.append({'worker_id': i, 'status': 'running', 'info': response.json()['info']['status']})
+                    workers_up += 1
                     all_workers_down = False
                 except requests.exceptions.RequestException:
                     logger.info("Worker %s is down", worker_name)
                     worker_statuses.append({'worker_id': i, 'status': 'down'})
+                    workers_down += 1
+            logger.info("Finished workers liveness check")
             # Retry stuck jobs
             if all_workers_down and redis_client.llen(PROGRESS_QUEUE) > 0:
                 logger.info("all workers are down but some jobs are stuck in progress")
@@ -145,6 +151,8 @@ def update_status_and_metrics():
                     'num_in_progress': num_in_progress,
                     'jobs_failed': jobs_failed,
                     'jobs_in_progress': jobs_in_progress,
+                    'workers_up': workers_up,
+                    'workers_down': workers_down,
                     'workers': worker_statuses
                 }
             #logger.info("Status: %s", json.dumps(status))
