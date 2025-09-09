@@ -8,6 +8,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime, timezone
+from urllib3.util import Retry
 
 # Configuration
 REDIS_HOST = os.getenv('REDIS_HOST', 'redis')
@@ -21,6 +22,10 @@ WORKER_PREFIX = os.getenv('WORKER_PREFIX', 'stellar-core')
 NAMESPACE = os.getenv('NAMESPACE', 'default')
 WORKER_COUNT = int(os.getenv('WORKER_COUNT', 3))
 LOGGING_INTERVAL_SECONDS = int(os.getenv('LOGGING_INTERVAL_SECONDS', 10))
+
+s = requests.Session()
+retries = Retry(total=3)
+s.mount('http://', requests.adapters.HTTPAdapter(max_retries=retries))
 
 def get_logging_level():
     name_to_level = {
@@ -114,7 +119,7 @@ def update_status_and_metrics():
             for i in range(WORKER_COUNT):
                 worker_name = f"{WORKER_PREFIX}-{i}.{WORKER_PREFIX}.{NAMESPACE}.svc.cluster.local"
                 try:
-                    response = requests.get(f"http://{worker_name}:11626/info", timeout=5)
+                    response = requests.get(f"http://{worker_name}:11626/info", timeout=10)
                     logger.debug("Worker %s is running, status code %d, response: %s", worker_name, response.status_code, response.json())
                     worker_statuses.append({'worker_id': i, 'status': 'running', 'info': response.json()['info']['status']})
                     workers_up += 1
