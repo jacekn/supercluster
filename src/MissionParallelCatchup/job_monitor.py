@@ -126,6 +126,7 @@ def update_status_and_metrics():
 
             # Check the queue status
             # For remaining and successful jobs, we just print their count, do not care what they are and who owns it
+            logger.info("Getting status data from redis")
             num_remain = redis_client.llen(JOB_QUEUE)
             num_succeeded = redis_client.llen(SUCCESS_QUEUE)
             # For failed and in-progress jobs, we retrieve their full content
@@ -136,6 +137,7 @@ def update_status_and_metrics():
 
             # update the status
             with status_lock:
+                logger.info("Updating status data structure inside lock")
                 status = {
                     'num_remain': num_remain,
                     'num_succeeded': num_succeeded,
@@ -158,6 +160,7 @@ def update_status_and_metrics():
         except Exception as e:
             logger.error("Error while getting status: %s", str(e))
 
+        logger.info("Sleeping...")
         time.sleep(LOGGING_INTERVAL_SECONDS)
 
 def run(server_class=HTTPServer, handler_class=RequestHandler):
