@@ -24,7 +24,7 @@ WORKER_COUNT = int(os.getenv('WORKER_COUNT', 3))
 LOGGING_INTERVAL_SECONDS = int(os.getenv('LOGGING_INTERVAL_SECONDS', 10))
 
 s = requests.Session()
-retries = Retry(total=3)
+retries = Retry(total=1)
 s.mount('http://', requests.adapters.HTTPAdapter(max_retries=retries))
 
 def get_logging_level():
