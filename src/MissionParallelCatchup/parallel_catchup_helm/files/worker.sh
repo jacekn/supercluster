@@ -38,12 +38,11 @@ if [ -n "$JOB_KEY" ]; then
     if [ ! "$(/usr/bin/stellar-core --conf /config/stellar-core.cfg new-db --console&&
         /usr/bin/stellar-core --conf /config/stellar-core.cfg catchup "$JOB_KEY" --metric 'ledger.transaction.apply' --console)" ]; then
         echo "SSC_DEBUG $(date) Error processing job: $JOB_KEY"
-        redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" LPUSH "$FAILED_QUEUE" "$JOB_KEY|$POD_NAME" # enhance the entry with pod name for tracking
+        QUEUE_COMMAND="LPUSH $FAILED_QUEUE \"$JOB_KEY|$POD_NAME\""  # enhance the entry with pod name for tracking
     else
         echo "SSC_DEBUG $(date) Successfully processed job: $JOB_KEY"
-        redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" LPUSH "$SUCCESS_QUEUE" "$JOB_KEY"
+        QUEUE_COMMAND="LPUSH $SUCCESS_QUEUE \"$JOB_KEY\""
     fi
-    redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" LREM "$PROGRESS_QUEUE" -1 "$JOB_KEY"
 
     # Parse and extract the metrics from the log file
     LOG_FILE=$(ls -t $LOG_DIR/stellar-core*.log | head -n 1)
@@ -61,8 +60,7 @@ if [ -n "$JOB_KEY" ]; then
     DURATION=$((END_TIME - START_TIME))s
     echo "SSC_DEBUG $(date) Finish processing job: $JOB_KEY, duration: $DURATION"
 
-    # Push metrics to redis in a transaction to ensure data consistency. Retry for 5min on failures
-    core_id=$(echo "$POD_NAME" | grep -o '[0-9]\+')
+    # push data to redis. We will retry for 5min in case of problems
     for i in $(seq 1 30);do
         redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" <<EOF
 MULTI
