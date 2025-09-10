@@ -41,5 +41,5 @@ range_generator:
     starting_ledger: 0
     latest_ledger_num: 100000
     overlap_ledgers: 320
-    uniform_ledgers_per_job: 8000 # only for strategy="uniform"
+    uniform_ledgers_per_job: 4000 # only for strategy="uniform"
     logarithmic_floor_ledgers: 16000 # only for strategy="logarithmic"
