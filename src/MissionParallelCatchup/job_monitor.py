@@ -7,10 +7,13 @@ import logging
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from prometheus_client import Gauge, Histogram, generate_latest, REGISTRY, CONTENT_TYPE_LATEST
 from datetime import datetime, timezone
-from urllib3.util import Retry
 
 # Configuration
+# Histogram buckets
+#                  5m  15m   30m    1h  1.5h    2h
+metric_buckets = (300, 900, 1800, 3600, 5400, 7200, float("inf"))
 REDIS_HOST = os.getenv('REDIS_HOST', 'redis')
 REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
 JOB_QUEUE = os.getenv('JOB_QUEUE', 'ranges')
@@ -23,9 +26,6 @@ NAMESPACE = os.getenv('NAMESPACE', 'default')
 WORKER_COUNT = int(os.getenv('WORKER_COUNT', 3))
 LOGGING_INTERVAL_SECONDS = int(os.getenv('LOGGING_INTERVAL_SECONDS', 10))
 
-s = requests.Session()
-retries = Retry(total=1)
-s.mount('http://', requests.adapters.HTTPAdapter(max_retries=retries))
 
 def get_logging_level():
     name_to_level = {
@@ -41,6 +41,7 @@ def get_logging_level():
     else:
         return logging.INFO
 
+
 # Initialize Redis client
 redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
@@ -55,13 +56,16 @@ logger = logging.getLogger()
 
 # In-memory status data structure and threading lock
 status = {
-    'num_remain': 1, # initialize the job remaining to non-zero to indicate something is running, just the status hasn't been updated yet
-    'num_succeeded': 0,
-    'num_failed': 0,
-    'num_in_progress': 0,
+    'queue_remain_count': 1,  # initialize the job remaining to non-zero to indicate something is running, just the status hasn't been updated yet
+    'queue_succeeded_count': 0,
+    'queue_failed_count': 0,
+    'queue_in_progress_count': 0,
     'jobs_failed': [],
     'jobs_in_progress': [],
-    'workers': []
+    'workers': [],
+    'workers_up': 0,
+    'workers_down': 0,
+    'workers_refresh_duration': 0,
 }
 status_lock = threading.Lock()
 
@@ -69,6 +73,14 @@ metrics = {
     'metrics': []
 }
 metrics_lock = threading.Lock()
+
+# Create metrics
+metric_catchup_queues = Gauge('ssc_parallel_catchup_queues', 'Exposes metrics for job queues', ["queue"])
+metric_workers = Gauge('ssc_parallel_catchup_workers', 'Exposes catch up worker status', ["status"])
+metric_refresh_duration = Gauge('ssc_parallel_catchup_workers_refresh_duration_seconds', 'Time it took to refresh worker status')
+metric_full_duration = Histogram('ssc_parallel_catchup_job_full_duration_seconds', 'Exposes full job duration as histogram', buckets=metric_buckets)
+metric_tx_apply_duration = Histogram('ssc_parallel_catchup_job_tx_applly_duration_seconds', 'Exposes job TX apply duration as histogram', buckets=metric_buckets)
+
 
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -81,20 +93,10 @@ class RequestHandler(BaseHTTPRequestHandler):
         # Prometheus metrics use status data
         elif self.path == '/prometheus':
             self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
+            self.send_header('Content-type', CONTENT_TYPE_LATEST)
             self.end_headers()
-            status_data = None
-            prometheus_metrics = ''
-            with status_lock:
-                status_data = status
-            for metric in status_data.keys():
-                if metric.startswith('num_'):
-                    prometheus_metrics += f'ssc_parallel_catchup_jobs{{queue="{metric}"}} {status_data[metric]}\n'
-                if metric == 'workers_refresh_duration':
-                    prometheus_metrics += f'ssc_parallel_catchup_workers_refresh_duration_seconds {status_data[metric]}\n'
-                elif metric.startswith('workers_'):
-                    prometheus_metrics += f'ssc_parallel_catchup_workers{{status="{metric}"}} {status_data[metric]}\n'
-            self.wfile.write(prometheus_metrics.encode())
+            output = generate_latest(REGISTRY)
+            self.wfile.write(output)
         elif self.path == '/metrics':
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
@@ -105,10 +107,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
+
 def retry_jobs_in_progress():
     while redis_client.llen(PROGRESS_QUEUE) > 0:
         job = redis_client.lmove(PROGRESS_QUEUE, JOB_QUEUE, "RIGHT", "LEFT")
         logger.info("moved job %s from %s to %s", job, PROGRESS_QUEUE, JOB_QUEUE)
+
 
 def update_status_and_metrics():
     global status
@@ -144,22 +148,21 @@ def update_status_and_metrics():
             # Check the queue status
             # For remaining and successful jobs, we just print their count, do not care what they are and who owns it
             logger.info("Getting status data from redis")
-            num_remain = redis_client.llen(JOB_QUEUE)
-            num_succeeded = redis_client.llen(SUCCESS_QUEUE)
-            # For failed and in-progress jobs, we retrieve their full content
             jobs_failed = redis_client.lrange(FAILED_QUEUE, 0, -1)
-            num_failed = len(jobs_failed)
             jobs_in_progress = redis_client.lrange(PROGRESS_QUEUE, 0, -1)
-            num_in_progress = len(jobs_in_progress)
+            queue_remain_count = redis_client.llen(JOB_QUEUE)
+            queue_succeeded_count = redis_client.llen(SUCCESS_QUEUE)
+            queue_failed_count = len(jobs_failed)
+            queue_in_progress_count = len(jobs_in_progress)
 
             # update the status
             with status_lock:
                 logger.info("Updating status data structure inside lock")
                 status = {
-                    'num_remain': num_remain,
-                    'num_succeeded': num_succeeded,
-                    'num_failed': num_failed,
-                    'num_in_progress': num_in_progress,
+                    'queue_remain_count': queue_remain_count,
+                    'queue_succeeded_count': queue_succeeded_count,
+                    'queue_failed_count': queue_failed_count,
+                    'queue_in_progress_count': queue_in_progress_count,
                     'jobs_failed': jobs_failed,
                     'jobs_in_progress': jobs_in_progress,
                     'workers': worker_statuses,
@@ -167,6 +170,13 @@ def update_status_and_metrics():
                     'workers_down': workers_down,
                     'workers_refresh_duration': workers_refresh_duration,
                 }
+                metric_catchup_queues.labels(queue="remain").set(queue_remain_count)
+                metric_catchup_queues.labels(queue="succeeded").set(queue_succeeded_count)
+                metric_catchup_queues.labels(queue="failed").set(queue_failed_count)
+                metric_catchup_queues.labels(queue="in_progress").set(queue_in_progress_count)
+                metric_workers.labels(status="up").set(workers_up)
+                metric_workers.labels(status="down").set(workers_down)
+                metric_refresh_duration.set(workers_refresh_duration)
             #logger.info("Status: %s", json.dumps(status))
 
             # update the metrics
@@ -176,6 +186,10 @@ def update_status_and_metrics():
                 logger.info("New metrics: %s", json.dumps(new_metrics))
                 with metrics_lock:
                     metrics['metrics'].extend(new_metrics)
+                    for timing in new_metrics:
+                        _, _, tx_apply, full_duration = timing.split('|')
+                        metric_full_duration.observe(float(full_duration.rstrip('s')))
+                        metric_tx_apply_duration.observe(float(tx_apply.rstrip('ms'))/1000)
             #logger.info("Metrics: %s", json.dumps(metrics))
 
         except Exception as e:
@@ -184,11 +198,13 @@ def update_status_and_metrics():
         logger.info("Sleeping...")
         time.sleep(LOGGING_INTERVAL_SECONDS)
 
+
 def run(server_class=HTTPServer, handler_class=RequestHandler):
     server_address = ('', 8080)
     httpd = server_class(server_address, handler_class)
     logger.info('Starting httpd server...')
     httpd.serve_forever()
+
 
 if __name__ == '__main__':
     log_thread = threading.Thread(target=update_status_and_metrics)
