@@ -80,7 +80,7 @@ metric_catchup_queues = Gauge('ssc_parallel_catchup_queues', 'Exposes metrics fo
 metric_workers = Gauge('ssc_parallel_catchup_workers', 'Exposes catch up worker status', ["status"])
 metric_refresh_duration = Gauge('ssc_parallel_catchup_workers_refresh_duration_seconds', 'Time it took to refresh worker status')
 metric_full_duration = Histogram('ssc_parallel_catchup_job_full_duration_seconds', 'Exposes full job duration as histogram', buckets=metric_buckets)
-metric_tx_apply_duration = Histogram('ssc_parallel_catchup_job_tx_applly_duration_seconds', 'Exposes job TX apply duration as histogram', buckets=metric_buckets)
+metric_tx_apply_duration = Histogram('ssc_parallel_catchup_job_tx_apply_duration_seconds', 'Exposes job TX apply duration as histogram', buckets=metric_buckets)
 
 
 class RequestHandler(BaseHTTPRequestHandler):
