@@ -137,7 +137,6 @@ def update_status_and_metrics():
                     workers_up += 1
                     all_workers_down = False
                 except requests.exceptions.RequestException:
-                    logger.info("Worker %s is down", worker_name)
                     worker_statuses.append({'worker_id': i, 'status': 'down'})
                     workers_down += 1
             workers_refresh_duration = time.time() - workers_refresh_start_time
@@ -199,6 +198,19 @@ def update_status_and_metrics():
                         metric_full_duration.observe(float(full_duration.rstrip('s')))
                         metric_tx_apply_duration.observe(float(tx_apply.rstrip('ms'))/1000)
             #logger.info("Metrics: %s", json.dumps(metrics))
+            # DEUBG - check consistency
+            with metrics_lock:
+                jacek_metrics = metrics['metrics'].copy()
+            with status_lock:
+                jacek_in_progress = status['jobs_in_progress'].copy()
+            logger.info("Checking metrics vs in progress consistency")
+            for p in jacek_in_progress:
+                for m in jacek_metrics:
+                    r, w, _, _ = m.split('|')
+                    if r == p:
+                        logger.info("SSC ERROR: found clash", p, m)
+            logger.info("Finished consistency check")
+
 
         except Exception as e:
             logger.error("Error while getting status: %s", str(e))
