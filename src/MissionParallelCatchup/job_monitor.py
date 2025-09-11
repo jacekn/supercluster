@@ -81,6 +81,7 @@ metric_workers = Gauge('ssc_parallel_catchup_workers', 'Exposes catch up worker 
 metric_refresh_duration = Gauge('ssc_parallel_catchup_workers_refresh_duration_seconds', 'Time it took to refresh worker status')
 metric_full_duration = Histogram('ssc_parallel_catchup_job_full_duration_seconds', 'Exposes full job duration as histogram', buckets=metric_buckets)
 metric_tx_apply_duration = Histogram('ssc_parallel_catchup_job_tx_apply_duration_seconds', 'Exposes job TX apply duration as histogram', buckets=metric_buckets)
+metric_mission_duration = Histogram('ssc_parallel_catchup_mission_duration_seconds', 'Time in seconds since the mission started ')
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -117,6 +118,7 @@ def retry_jobs_in_progress():
 
 def update_status_and_metrics():
     global status
+    mission_start_time = time.time()
     while True:
         try:
             # Ping each worker status
@@ -155,6 +157,8 @@ def update_status_and_metrics():
             queue_succeeded_count = redis_client.llen(SUCCESS_QUEUE)
             queue_failed_count = len(jobs_failed)
             queue_in_progress_count = len(jobs_in_progress)
+            # Get run duration
+            mission_duration = time.time() - mission_start_time
 
             # update the status
             with status_lock:
@@ -171,6 +175,7 @@ def update_status_and_metrics():
                     'workers_up': workers_up,
                     'workers_down': workers_down,
                     'workers_refresh_duration': workers_refresh_duration,
+                    'mission_duration': mission_duration,
                 }
                 metric_catchup_queues.labels(queue="remain").set(queue_remain_count)
                 metric_catchup_queues.labels(queue="succeeded").set(queue_succeeded_count)
@@ -179,6 +184,7 @@ def update_status_and_metrics():
                 metric_workers.labels(status="up").set(workers_up)
                 metric_workers.labels(status="down").set(workers_down)
                 metric_refresh_duration.set(workers_refresh_duration)
+                metric_mission_duration.set(mission_duration)
             #logger.info("Status: %s", json.dumps(status))
 
             # update the metrics
