@@ -23,17 +23,16 @@ endRange=$endRange"
 
 # Store redis commands in a file for bulk upload in a transaction
 CMD_FILE=redis_bulk_load
-echo "MULTI">$CMD_FILE
+echo "MULTI">$CMD_FILE  # Start redis transaction
 while [ "$endRange" -gt "$startingLedger" ]; do
-    ledgersToApply=$((ledgersPerJob + overlapLedgers));
     echo "$(date) : ${endRange}/${ledgersToApply}";
-    endRange=$(( endRange - ledgersPerJob ));
     echo "RPUSH ranges \"${endRange}/${ledgersToApply}\"">>$CMD_FILE
+    endRange=$(( endRange - ledgersPerJob ));
 done
-echo "EXEC">>$CMD_FILE
+echo "EXEC">>$CMD_FILE  # Close redis transaction
 
 echo "$(date) Created file $CMD_FILE with $(wc -l $CMD_FILE) lines. Loading into redis"
-for i in $(seq 1 10);do
+for i in $(seq 1 12);do
     redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" <$CMD_FILE
     if [ $? -eq 0 ]; then
         break
