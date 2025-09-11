@@ -82,6 +82,7 @@ metric_refresh_duration = Gauge('ssc_parallel_catchup_workers_refresh_duration_s
 metric_full_duration = Histogram('ssc_parallel_catchup_job_full_duration_seconds', 'Exposes full job duration as histogram', buckets=metric_buckets)
 metric_tx_apply_duration = Histogram('ssc_parallel_catchup_job_tx_apply_duration_seconds', 'Exposes job TX apply duration as histogram', buckets=metric_buckets)
 metric_mission_duration = Gauge('ssc_parallel_catchup_mission_duration_seconds', 'Time in seconds since the mission started ')
+metric_retries = Gauge('ssc_parallel_catchup_job_retried_count', 'Number of jobs that were retried')
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -113,6 +114,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 def retry_jobs_in_progress():
     while redis_client.llen(PROGRESS_QUEUE) > 0:
         job = redis_client.lmove(PROGRESS_QUEUE, JOB_QUEUE, "RIGHT", "LEFT")
+        metric_retries.inc()
         logger.info("moved job %s from %s to %s", job, PROGRESS_QUEUE, JOB_QUEUE)
 
 
