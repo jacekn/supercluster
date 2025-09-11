@@ -56,7 +56,8 @@ logger = logging.getLogger()
 
 # In-memory status data structure and threading lock
 status = {
-    'queue_remain_count': 1,  # initialize the job remaining to non-zero to indicate something is running, just the status hasn't been updated yet
+    'num_remain': 1,  # initialize the job remaining to non-zero to indicate something is running, just the status hasn't been updated yet
+    'queue_remain_count': 0,
     'queue_succeeded_count': 0,
     'queue_failed_count': 0,
     'queue_in_progress_count': 0,
