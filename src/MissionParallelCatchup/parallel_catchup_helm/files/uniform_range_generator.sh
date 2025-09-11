@@ -35,7 +35,7 @@ echo "EXEC">>$CMD_FILE
 echo "$(date) Created file $CMD_FILE with $(wc -l $CMD_FILE) lines. Loading into redis"
 for i in $(seq 1 10);do
     redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" <$CMD_FILE
-    if [ $? -eq 0 ];
+    if [ $? -eq 0 ]; then
         break
     else
         echo "$(date) Error inserting data. Sleeping and retrying"
