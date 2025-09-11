@@ -1,7 +1,5 @@
 #!/bin/sh
 
-set -x
-
 # Check if required environment variables are set
 if [ -z "$REDIS_HOST" ]; then echo "REDIS_HOST not set"; exit 1; fi
 if [ -z "$REDIS_PORT" ]; then echo "REDIS_PORT not set"; exit 1; fi
@@ -30,38 +28,35 @@ JOB_KEY=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" LMOVE "$JOB_QUEUE" "$PROGR
 if [ -n "$JOB_KEY" ]; then
     # Start timer
     START_TIME=$(date +%s)  
-    START_DATE=$(date)
-    echo "SSC_DEBUG $START_DATE Processing job: $JOB_KEY"
-    core_id=$(echo "$POD_NAME" | grep -o '[0-9]\+')
-    redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" SADD SSC_STATUS "$core_id|$JOB_KEY|$START_DATE"
+    echo "Processing job: $JOB_KEY"
 
     if [ ! "$(/usr/bin/stellar-core --conf /config/stellar-core.cfg new-db --console&&
-        /usr/bin/stellar-core --conf /config/stellar-core.cfg catchup "$JOB_KEY" --metric 'ledger.transaction.apply' --console)" ]; then
-        echo "SSC_DEBUG $(date) Error processing job: $JOB_KEY"
+    /usr/bin/stellar-core --conf /config/stellar-core.cfg catchup "$JOB_KEY" --metric 'ledger.transaction.apply' --console)" ]; then
+        echo "Error processing job: $JOB_KEY"
         QUEUE_COMMAND="LPUSH $FAILED_QUEUE \"$JOB_KEY|$POD_NAME\""  # enhance the entry with pod name for tracking
     else
-        echo "SSC_DEBUG $(date) Successfully processed job: $JOB_KEY"
+        echo "Successfully processed job: $JOB_KEY"
         QUEUE_COMMAND="LPUSH $SUCCESS_QUEUE \"$JOB_KEY\""
     fi
 
     # Parse and extract the metrics from the log file
     LOG_FILE=$(ls -t $LOG_DIR/stellar-core*.log | head -n 1)
     if [ -z "$LOG_FILE" ]; then
-    echo "SSC_DEBUG $(date) No log file found."
+    echo "No log file found."
     exit 1
     fi
 
     tx_apply_ms=$(tac "$LOG_FILE" | grep -m 1 -B 11 "metric 'ledger.transaction.apply':" | grep "sum =" | awk '{print $NF}')
-    echo "SSC_DEBUG $(date) Log file: $LOG_FILE"
-    echo "SSC_DEBUG $(date) ledger.transaction.apply sum: $tx_apply_ms"
+    echo "Log file: $LOG_FILE"
+    echo "ledger.transaction.apply sum: $tx_apply_ms"
 
     # End timer and duration
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))s
-    echo "SSC_DEBUG $(date) Finish processing job: $JOB_KEY, duration: $DURATION"
-    redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" SREM SSC_STATUS "$core_id|$JOB_KEY|$START_DATE"
+    echo "Finish processing job: $JOB_KEY, duration: $DURATION"
 
-    # push data to redis. We will retry for 5min in case of problems
+    # Push metrics to redis in a transaction to ensure data consistency. Retry for 5min on failures
+    core_id=$(echo "$POD_NAME" | grep -o '[0-9]\+')
     for i in $(seq 1 30);do
         redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" <<EOF
 MULTI

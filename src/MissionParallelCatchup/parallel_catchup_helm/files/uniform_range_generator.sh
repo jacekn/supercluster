@@ -25,14 +25,14 @@ endRange=$endRange"
 CMD_FILE=redis_bulk_load
 echo "MULTI">$CMD_FILE  # Start redis transaction
 while [ "$endRange" -gt "$startingLedger" ]; do
-    echo "$(date) : ${endRange}/${ledgersToApply}";
+    echo "${endRange}/${ledgersToApply}";
     echo "RPUSH ranges \"${endRange}/${ledgersToApply}\"">>$CMD_FILE
     endRange=$(( endRange - ledgersPerJob ));
 done
 echo "EXEC">>$CMD_FILE  # Close redis transaction
 
 echo "$(date) Created file $CMD_FILE with $(wc -l $CMD_FILE) lines. Loading into redis"
-for i in $(seq 1 12);do
+for i in $(seq 1 6);do
     redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" <$CMD_FILE
     if [ $? -eq 0 ]; then
         break
