@@ -160,6 +160,7 @@ def update_status_and_metrics():
             with status_lock:
                 logger.info("Updating status data structure inside lock")
                 status = {
+                    'num_remain': queue_remain_count,  # Needed for the SSC code to monitor progress
                     'queue_remain_count': queue_remain_count,
                     'queue_succeeded_count': queue_succeeded_count,
                     'queue_failed_count': queue_failed_count,
