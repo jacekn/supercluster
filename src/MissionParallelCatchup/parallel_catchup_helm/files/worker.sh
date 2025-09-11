@@ -59,6 +59,7 @@ if [ -n "$JOB_KEY" ]; then
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))s
     echo "SSC_DEBUG $(date) Finish processing job: $JOB_KEY, duration: $DURATION"
+    redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" SREM SSC_STATUS "$core_id|$JOB_KEY|$START_DATE"
 
     # push data to redis. We will retry for 5min in case of problems
     for i in $(seq 1 30);do
