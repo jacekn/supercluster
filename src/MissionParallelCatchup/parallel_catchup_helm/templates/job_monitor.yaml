@@ -53,7 +53,7 @@ spec:
     spec:
       containers:
       - name: job-monitor
-        image: stellar/ssc-job-monitor:latest
+        image: docker-registry.services.stellar-ops.com/dev/job-monitor:jacek
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
